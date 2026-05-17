@@ -40,6 +40,11 @@ CONTENT_CALENDAR_HEADERS = [
 class GoogleWorkspaceClient:
     """Reads context from Google Workspace and appends rows to Sheets."""
 
+    SCOPES = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/documents.readonly",
+    ]
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._sheets = None
@@ -47,32 +52,69 @@ class GoogleWorkspaceClient:
         self.can_connect = self._credentials_available()
 
     def _credentials_available(self) -> bool:
-        """Check whether Google credentials are likely available."""
-        return bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")) or bool(
-            os.getenv("GOOGLE_CLOUD_PROJECT")
+        """Check whether OAuth files are available for a real Google run."""
+        return os.path.exists(self.settings.google_oauth_client_file) or os.path.exists(
+            self.settings.google_token_file
         )
+
+    def _get_credentials(self):
+        """Load, refresh, or create desktop OAuth credentials."""
+        from google.auth.transport.requests import Request
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+
+        credentials = None
+        token_file = self.settings.google_token_file
+        client_file = self.settings.google_oauth_client_file
+
+        if os.path.exists(token_file):
+            credentials = Credentials.from_authorized_user_file(
+                token_file,
+                self.SCOPES,
+            )
+
+        if credentials and credentials.valid:
+            return credentials
+
+        if credentials and credentials.expired and credentials.refresh_token:
+            credentials.refresh(Request())
+        else:
+            if not os.path.exists(client_file):
+                raise FileNotFoundError(
+                    "Google OAuth client file not found. Expected "
+                    f"{client_file}. Create a desktop OAuth client in Google "
+                    "Cloud Console and save the downloaded JSON there."
+                )
+            flow = InstalledAppFlow.from_client_secrets_file(
+                client_file,
+                self.SCOPES,
+            )
+            credentials = flow.run_local_server(port=0)
+
+        token_dir = os.path.dirname(token_file)
+        if token_dir:
+            os.makedirs(token_dir, exist_ok=True)
+
+        with open(token_file, "w", encoding="utf-8") as token:
+            token.write(credentials.to_json())
+
+        return credentials
 
     def _get_sheets_service(self):
         """Create the Google Sheets API client lazily."""
-        from google.auth import default
         from googleapiclient.discovery import build
 
         if self._sheets is None:
-            credentials, _ = default(
-                scopes=["https://www.googleapis.com/auth/spreadsheets"]
-            )
+            credentials = self._get_credentials()
             self._sheets = build("sheets", "v4", credentials=credentials)
         return self._sheets
 
     def _get_docs_service(self):
         """Create the Google Docs API client lazily."""
-        from google.auth import default
         from googleapiclient.discovery import build
 
         if self._docs is None:
-            credentials, _ = default(
-                scopes=["https://www.googleapis.com/auth/documents.readonly"]
-            )
+            credentials = self._get_credentials()
             self._docs = build("docs", "v1", credentials=credentials)
         return self._docs
 

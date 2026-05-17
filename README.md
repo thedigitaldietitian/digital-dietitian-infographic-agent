@@ -7,7 +7,7 @@ This repository contains v1 of a simple Python agent that creates one
 
 v1 generates the content package, QA summary, image-generation prompt, caption,
 SEO keywords and suggested schedule. It can print the package in dry-run mode or
-append it to the Google Sheet when Google credentials are configured.
+append it to the Google Sheet after Google OAuth desktop authentication.
 
 It does not schedule to Buffer and does not generate the final image.
 
@@ -36,8 +36,8 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Fill in `.env` with Google credentials. Do not commit `.env` or credential JSON
-files.
+The default `.env.example` already contains the Google Sheet, SOP Doc and Drive
+folder IDs used by the agent.
 
 ## Usage
 
@@ -55,14 +55,45 @@ python main.py
 
 ## Credentials
 
-The agent uses environment variables and Google Application Default Credentials.
-For local use, set:
+The agent uses Google OAuth desktop authentication. It does not use service
+account JSON keys.
+
+1. In Google Cloud Console, create or select a project.
+2. Enable the Google Sheets API and Google Docs API.
+3. Configure the OAuth consent screen for your Google account.
+4. Create an OAuth client ID with application type `Desktop app`.
+5. Download the client JSON file.
+6. Create a local credentials folder:
 
 ```bash
-GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
+mkdir -p credentials
 ```
 
-The credential file must not be committed to the repository.
+7. Save the downloaded OAuth client JSON as:
+
+```text
+credentials/oauth_client.json
+```
+
+8. Confirm `.env` contains:
+
+```text
+GOOGLE_OAUTH_CLIENT_FILE=credentials/oauth_client.json
+GOOGLE_TOKEN_FILE=token.json
+```
+
+9. Run the agent:
+
+```bash
+python main.py
+```
+
+On the first run, a browser window opens for Google login and consent. After
+consent, the local OAuth token is stored in `token.json` so future runs can
+reuse or refresh it.
+
+Both `credentials/oauth_client.json` and `token.json` are ignored by git and must
+never be committed.
 
 ## Status
 

@@ -157,6 +157,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# Google OAuth desktop credentials and local token cache
+token.json
+credentials/oauth_client.json
+
 # Spyder project settings
 .spyderproject
 .spyproject

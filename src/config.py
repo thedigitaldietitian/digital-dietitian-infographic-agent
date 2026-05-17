@@ -15,6 +15,8 @@ class Settings:
     sheet_tab: str
     sop_document_id: str
     approved_examples_folder_id: str
+    google_oauth_client_file: str
+    google_token_file: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -36,4 +38,9 @@ class Settings:
                 "APPROVED_EXAMPLES_FOLDER_ID",
                 "1c8VeMvbiOrXtDzGGNlVWKlc4cknv1KpV",
             ),
+            google_oauth_client_file=os.getenv(
+                "GOOGLE_OAUTH_CLIENT_FILE",
+                "credentials/oauth_client.json",
+            ),
+            google_token_file=os.getenv("GOOGLE_TOKEN_FILE", "token.json"),
         )
