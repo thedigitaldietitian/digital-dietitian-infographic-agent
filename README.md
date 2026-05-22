@@ -14,6 +14,10 @@ generates the final image with the OpenAI API, saves it locally in `outputs/`,
 optionally uploads it to Google Drive, and writes image/status fields back to the
 Sheet.
 
+v2.1 adds deterministic template rendering with Pillow. It renders the final
+1080 x 1350 infographic from the Sheet content package using real text and a
+fixed 4 x 5 matrix layout, avoiding AI-rendered text distortion.
+
 It does not schedule to Buffer.
 
 ## Project Structure
@@ -30,6 +34,7 @@ It does not schedule to Buffer.
     ├── config.py
     ├── google_workspace.py
     ├── image_generation.py
+    ├── template_renderer.py
     └── models.py
 ```
 
@@ -85,6 +90,19 @@ Generate and save the image locally without uploading to Drive:
 
 ```bash
 python main.py --generate-image --skip-drive-upload
+```
+
+Render a deterministic v2.1 template PNG from an existing Sheet row:
+
+```bash
+python main.py --render-template --row-id INFO-2026-004
+```
+
+Preview the row that would be rendered without creating an image or writing to
+the Sheet:
+
+```bash
+python main.py --render-template --row-id INFO-2026-004 --dry-run
 ```
 
 ## v2 Image Generation Behaviour
@@ -163,6 +181,45 @@ Because image OCR/layout verification is not implemented yet, successful v2
 runs are marked `PASS WITH HUMAN REVIEW` and `Human Review Needed` remains
 `Yes`. A person should confirm the generated image visually matches the approved
 template before any later Buffer scheduling workflow.
+
+## v2.1 Template Rendering
+
+For reliable readable output, use the deterministic renderer instead of asking
+OpenAI to render the full infographic layout:
+
+```bash
+python main.py --render-template --row-id INFO-2026-004
+```
+
+The renderer:
+
+- reads the existing Google Sheet content package for the requested `Post ID`
+- preserves the existing caption, matrix and topic
+- creates a 1080 x 1350 PNG with Pillow
+- renders all headings, row labels, column labels and ingredients as real text
+- uses exactly 4 content columns and exactly 5 rows
+- uses a left-side row label column
+- uses rounded rectangles, pastel boxes and placeholder food tiles
+- saves to `outputs/{POST_ID}-rendered.png`
+- writes the local path and status fields back to the Sheet
+- keeps `Human Review Needed` as `Yes`
+- keeps `Ready for Buffer` as `No`
+
+`outputs/` is ignored by git, so generated PNGs are kept local and should not be
+committed.
+
+### Fonts
+
+The renderer looks for Open Sans in these local paths first:
+
+```text
+fonts/OpenSans-Regular.ttf
+fonts/OpenSans-Bold.ttf
+```
+
+To use Open Sans, create a local `fonts/` folder and add those two `.ttf` files.
+If Open Sans is not available, the renderer falls back to a clean system
+sans-serif font such as Arial or Helvetica.
 
 ## Credentials
 

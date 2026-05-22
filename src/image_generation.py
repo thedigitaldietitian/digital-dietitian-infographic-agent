@@ -79,6 +79,18 @@ def find_latest_eligible_infographic_row(
     return None
 
 
+def find_infographic_row_by_post_id(
+    rows: list[dict[str, str]],
+    post_id: str,
+) -> InfographicPackage | None:
+    """Return one infographic row by Post ID, even if it already has an image."""
+    for row in rows:
+        if row.get("Post ID", "").strip() != post_id:
+            continue
+        return package_from_sheet_row(row)
+    return None
+
+
 def is_eligible_for_image_generation(row: dict[str, str]) -> bool:
     """Check whether a sheet row is ready for v2 image generation."""
     format_value = row.get("Format", "").lower()
