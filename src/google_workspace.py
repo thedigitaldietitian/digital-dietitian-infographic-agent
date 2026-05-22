@@ -34,6 +34,10 @@ CONTENT_CALENDAR_HEADERS = [
     "Buffer Channel ID",
     "Buffer Status",
     "Buffer Post ID",
+    "Local Image Path",
+    "Google Drive Image Link",
+    "Image Generation Status",
+    "Next Action",
 ]
 
 
@@ -44,11 +48,13 @@ class GoogleWorkspaceClient:
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/documents.readonly",
     ]
+    DRIVE_SCOPES = SCOPES + ["https://www.googleapis.com/auth/drive.file"]
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._sheets = None
         self._docs = None
+        self._drive = None
         self.can_connect = self._credentials_available()
 
     def _credentials_available(self) -> bool:
@@ -57,12 +63,13 @@ class GoogleWorkspaceClient:
             self.settings.google_token_file
         )
 
-    def _get_credentials(self):
+    def _get_credentials(self, scopes: list[str] | None = None):
         """Load, refresh, or create desktop OAuth credentials."""
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
 
+        scopes = scopes or self.SCOPES
         credentials = None
         token_file = self.settings.google_token_file
         client_file = self.settings.google_oauth_client_file
@@ -70,8 +77,11 @@ class GoogleWorkspaceClient:
         if os.path.exists(token_file):
             credentials = Credentials.from_authorized_user_file(
                 token_file,
-                self.SCOPES,
+                scopes,
             )
+
+        if credentials and not credentials.has_scopes(scopes):
+            credentials = None
 
         if credentials and credentials.valid:
             return credentials
@@ -87,7 +97,7 @@ class GoogleWorkspaceClient:
                 )
             flow = InstalledAppFlow.from_client_secrets_file(
                 client_file,
-                self.SCOPES,
+                scopes,
             )
             credentials = flow.run_local_server(port=0)
 
@@ -117,6 +127,15 @@ class GoogleWorkspaceClient:
             credentials = self._get_credentials()
             self._docs = build("docs", "v1", credentials=credentials)
         return self._docs
+
+    def _get_drive_service(self):
+        """Create the Google Drive API client lazily."""
+        from googleapiclient.discovery import build
+
+        if self._drive is None:
+            credentials = self._get_credentials(self.DRIVE_SCOPES)
+            self._drive = build("drive", "v3", credentials=credentials)
+        return self._drive
 
     def read_sop_text(self) -> str:
         """Read the SOP Google Doc as plain text."""
@@ -156,7 +175,7 @@ class GoogleWorkspaceClient:
                 .values()
                 .get(
                     spreadsheetId=self.settings.sheet_id,
-                    range=f"{self.settings.sheet_tab}!A1:Z200",
+                    range=f"{self.settings.sheet_tab}!A1:AD500",
                 )
                 .execute()
             )
@@ -172,13 +191,123 @@ class GoogleWorkspaceClient:
             for row in values[1:]
         ]
 
+    def get_content_calendar_rows_with_numbers(self) -> tuple[list[str], list[dict[str, str]]]:
+        """Read Content Calendar rows and include their 1-based Sheet row number."""
+        if not self.can_connect:
+            return [], []
+
+        result = (
+            self._get_sheets_service()
+            .spreadsheets()
+            .values()
+            .get(
+                spreadsheetId=self.settings.sheet_id,
+                range=f"{self.settings.sheet_tab}!A1:AD500",
+            )
+            .execute()
+        )
+        values = result.get("values", [])
+        if not values:
+            return [], []
+
+        headers = values[0]
+        rows = []
+        for sheet_row_number, row in enumerate(values[1:], start=2):
+            mapped_row = {
+                headers[index]: value
+                for index, value in enumerate(row)
+                if index < len(headers)
+            }
+            mapped_row["_sheet_row_number"] = str(sheet_row_number)
+            rows.append(mapped_row)
+        return headers, rows
+
     def append_content_calendar_row(self, row: dict[str, str]) -> None:
         """Append one generated package to the Content Calendar tab."""
         values = [[row.get(header, "") for header in CONTENT_CALENDAR_HEADERS]]
         self._get_sheets_service().spreadsheets().values().append(
             spreadsheetId=self.settings.sheet_id,
-            range=f"{self.settings.sheet_tab}!A:Z",
+            range=f"{self.settings.sheet_tab}!A:AD",
             valueInputOption="USER_ENTERED",
             insertDataOption="INSERT_ROWS",
             body={"values": values},
         ).execute()
+
+    def ensure_content_calendar_headers(self, required_headers: list[str]) -> list[str]:
+        """Append missing Content Calendar headers and return the full header row."""
+        service = self._get_sheets_service()
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(
+                spreadsheetId=self.settings.sheet_id,
+                range=f"{self.settings.sheet_tab}!A1:AD1",
+            )
+            .execute()
+        )
+        headers = result.get("values", [[]])[0]
+        missing_headers = [header for header in required_headers if header not in headers]
+        if not missing_headers:
+            return headers
+
+        updated_headers = headers + missing_headers
+        service.spreadsheets().values().update(
+            spreadsheetId=self.settings.sheet_id,
+            range=f"{self.settings.sheet_tab}!A1",
+            valueInputOption="USER_ENTERED",
+            body={"values": [updated_headers]},
+        ).execute()
+        return updated_headers
+
+    def update_content_calendar_row(
+        self,
+        row_number: int,
+        updates: dict[str, str],
+    ) -> None:
+        """Update selected Content Calendar cells by header name."""
+        headers = self.ensure_content_calendar_headers(list(updates.keys()))
+
+        data = []
+        for header, value in updates.items():
+            column = column_number_to_letters(headers.index(header) + 1)
+            data.append(
+                {
+                    "range": f"{self.settings.sheet_tab}!{column}{row_number}",
+                    "values": [[value]],
+                }
+            )
+
+        self._get_sheets_service().spreadsheets().values().batchUpdate(
+            spreadsheetId=self.settings.sheet_id,
+            body={"valueInputOption": "USER_ENTERED", "data": data},
+        ).execute()
+
+    def upload_image_to_drive(self, image_path: str, file_name: str) -> str:
+        """Upload an image to Google Drive and return a shareable link."""
+        from googleapiclient.http import MediaFileUpload
+
+        metadata = {"name": file_name}
+        if self.settings.drive_upload_folder_id:
+            metadata["parents"] = [self.settings.drive_upload_folder_id]
+
+        media = MediaFileUpload(image_path, mimetype="image/png", resumable=False)
+        file = (
+            self._get_drive_service()
+            .files()
+            .create(
+                body=metadata,
+                media_body=media,
+                fields="id, webViewLink",
+            )
+            .execute()
+        )
+        return file.get("webViewLink", "")
+
+
+def column_number_to_letters(column_number: int) -> str:
+    """Convert a 1-based column number to A1 notation letters."""
+    letters = ""
+    while column_number:
+        column_number, remainder = divmod(column_number - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters

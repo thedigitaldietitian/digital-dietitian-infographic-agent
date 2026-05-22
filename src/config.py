@@ -17,6 +17,10 @@ class Settings:
     approved_examples_folder_id: str
     google_oauth_client_file: str
     google_token_file: str
+    drive_upload_folder_id: str
+    openai_image_model: str
+    output_dir: str
+    image_generation_size: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -43,4 +47,11 @@ class Settings:
                 "credentials/oauth_client.json",
             ),
             google_token_file=os.getenv("GOOGLE_TOKEN_FILE", "token.json"),
+            drive_upload_folder_id=os.getenv(
+                "DRIVE_UPLOAD_FOLDER_ID",
+                os.getenv("APPROVED_EXAMPLES_FOLDER_ID", ""),
+            ),
+            openai_image_model=os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1"),
+            output_dir=os.getenv("OUTPUT_DIR", "outputs"),
+            image_generation_size=os.getenv("IMAGE_GENERATION_SIZE", "1024x1536"),
         )
