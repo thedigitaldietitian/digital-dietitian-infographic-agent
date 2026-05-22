@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import textwrap
@@ -9,7 +10,8 @@ import textwrap
 from PIL import Image, ImageDraw, ImageFont
 
 from src.config import Settings
-from src.image_generation import BRAND_COLOURS, InfographicPackage
+from src.food_assets import FoodAssetLibrary, FoodAssetReport
+from src.image_generation import InfographicPackage
 
 
 CANVAS_SIZE = (1080, 1350)
@@ -21,30 +23,47 @@ PALE_BLUSH = "#fff3f6"
 PALE_GREEN = "#e2efcc"
 
 
+@dataclass(frozen=True)
+class TemplateRenderResult:
+    """Result of one deterministic template render."""
+
+    image_path: str
+    asset_report: FoodAssetReport
+
+
 def render_infographic_template(
     settings: Settings,
     package: InfographicPackage,
     output_path: str | None = None,
-) -> str:
+    generate_missing_assets: bool = False,
+) -> TemplateRenderResult:
     """Render a fixed-layout 1080 x 1350 PNG from a parsed content package."""
     validate_template_package(package)
 
     output_dir = Path(settings.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     safe_post_id = re.sub(r"[^A-Za-z0-9._-]+", "-", package.post_id).strip("-")
-    final_path = Path(output_path) if output_path else output_dir / f"{safe_post_id}-rendered.png"
+    final_path = (
+        Path(output_path)
+        if output_path
+        else output_dir / f"{safe_post_id}-rendered-v2-3.png"
+    )
 
-    image = Image.new("RGB", CANVAS_SIZE, PALE_BLUSH)
+    image = Image.new("RGBA", CANVAS_SIZE, PALE_BLUSH)
     draw = ImageDraw.Draw(image)
+    asset_library = FoodAssetLibrary(
+        settings=settings,
+        generate_missing_assets=generate_missing_assets,
+    )
 
     fonts = TemplateFonts()
     draw_background(draw)
     draw_header(draw, fonts, package)
-    draw_matrix(draw, fonts, package)
+    draw_matrix(image, draw, fonts, package, asset_library)
     draw_footer(draw, fonts, settings)
 
-    image.save(final_path, "PNG", optimize=True)
-    return str(final_path)
+    image.convert("RGB").save(final_path, "PNG", optimize=True)
+    return TemplateRenderResult(str(final_path), asset_library.report)
 
 
 def validate_template_package(package: InfographicPackage) -> None:
@@ -146,9 +165,11 @@ def extract_subtitle(package: InfographicPackage) -> str:
 
 
 def draw_matrix(
+    image: Image.Image,
     draw: ImageDraw.ImageDraw,
     fonts: TemplateFonts,
     package: InfographicPackage,
+    asset_library: FoodAssetLibrary,
 ) -> None:
     """Draw the exact 4 column x 5 row matrix plus left label column."""
     left = 60
@@ -193,7 +214,11 @@ def draw_matrix(
             cell_box = (x0, y0, x1, y1)
             fill = SOFT_CREAM if (row_index + col_index) % 2 == 0 else "#fff8d9"
             draw.rounded_rectangle(cell_box, radius=18, fill=fill, outline=PALE_BLUSH, width=2)
-            draw_food_placeholder(draw, cell_box, row_index, col_index)
+            asset = asset_library.resolve(ingredient)
+            if asset.path:
+                paste_food_asset(image, asset.path, cell_box)
+            else:
+                draw_food_placeholder(draw, cell_box, row_index, col_index)
             draw_wrapped_text(
                 draw,
                 normalize_ingredient_text(ingredient),
@@ -204,6 +229,21 @@ def draw_matrix(
                 line_spacing=4,
                 center=True,
             )
+
+
+def paste_food_asset(
+    image: Image.Image,
+    asset_path: str,
+    box: tuple[int, int, int, int],
+) -> None:
+    """Paste a transparent food asset at the top center of a cell."""
+    x0, y0, x1, _ = box
+    with Image.open(asset_path) as asset:
+        asset = asset.convert("RGBA")
+        asset.thumbnail((94, 64), Image.Resampling.LANCZOS)
+        x = x0 + ((x1 - x0) - asset.width) // 2
+        y = y0 + 10 + ((58 - asset.height) // 2)
+        image.alpha_composite(asset, (x, y))
 
 
 def draw_food_placeholder(

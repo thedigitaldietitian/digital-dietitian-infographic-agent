@@ -21,6 +21,9 @@ class Settings:
     openai_image_model: str
     output_dir: str
     image_generation_size: str
+    food_asset_dir: str
+    food_asset_map_file: str
+    food_asset_image_model: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -54,4 +57,13 @@ class Settings:
             openai_image_model=os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1"),
             output_dir=os.getenv("OUTPUT_DIR", "outputs"),
             image_generation_size=os.getenv("IMAGE_GENERATION_SIZE", "1024x1536"),
+            food_asset_dir=os.getenv("FOOD_ASSET_DIR", "assets/food"),
+            food_asset_map_file=os.getenv(
+                "FOOD_ASSET_MAP_FILE",
+                "assets/food_asset_map.json",
+            ),
+            food_asset_image_model=os.getenv(
+                "FOOD_ASSET_IMAGE_MODEL",
+                os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1"),
+            ),
         )

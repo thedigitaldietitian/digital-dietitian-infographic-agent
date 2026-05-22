@@ -55,6 +55,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Save the generated image locally but do not upload it to Google Drive.",
     )
+    parser.add_argument(
+        "--generate-missing-assets",
+        action="store_true",
+        help="Generate missing reusable food cutouts with OpenAI during template rendering.",
+    )
     return parser.parse_args()
 
 
@@ -211,7 +216,8 @@ def run_template_render(
                     "columns": package.columns,
                     "rows": package.rows,
                     "matrix": package.matrix,
-                    "would_render": f"{settings.output_dir}/{package.post_id}-rendered.png",
+                    "would_render": f"{settings.output_dir}/{package.post_id}-rendered-v2-3.png",
+                    "generate_missing_assets": args.generate_missing_assets,
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -219,7 +225,16 @@ def run_template_render(
         )
         return
 
-    local_image_path = render_infographic_template(settings, package)
+    if args.generate_missing_assets and not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY is required to generate missing food assets.")
+
+    render_result = render_infographic_template(
+        settings,
+        package,
+        generate_missing_assets=args.generate_missing_assets,
+    )
+    local_image_path = render_result.image_path
+    asset_report = render_result.asset_report.to_dict()
     drive_link = ""
     drive_note = ""
     if not args.skip_drive_upload:
@@ -232,6 +247,11 @@ def run_template_render(
             drive_note = " Drive upload failed due insufficient OAuth scopes."
 
     image_asset_link = drive_link or local_image_path
+    placeholder_note = (
+        "Missing assets use placeholders."
+        if asset_report["missing"]
+        else "No placeholders used."
+    )
     workspace.update_content_calendar_row(
         package.row_number,
         {
@@ -241,8 +261,11 @@ def run_template_render(
             "Image Generation Status": "DONE - rendered locally",
             "Visual QA": (
                 "NEEDS HUMAN REVIEW - deterministic 1080x1350 template rendered "
-                "from Sheet text with exact 4 columns and 5 rows. Placeholder food "
-                f"tiles used until approved food assets are available.{drive_note}"
+                "from Sheet text with exact 4 columns and 5 rows. "
+                f"Food assets found: {len(asset_report['found'])}; "
+                f"missing: {len(asset_report['missing'])}; "
+                f"generated: {len(asset_report['generated'])}. "
+                f"{placeholder_note}{drive_note}"
             ),
             "Human Review Needed": "Yes",
             "Next Action": (
@@ -255,6 +278,7 @@ def run_template_render(
     )
 
     print(f"Rendered template for {package.post_id}: {local_image_path}")
+    print(json.dumps({"food_assets": asset_report}, indent=2, ensure_ascii=False))
     if drive_link:
         print(f"Uploaded to Drive: {drive_link}")
     elif drive_note:

@@ -18,6 +18,11 @@ v2.1 adds deterministic template rendering with Pillow. It renders the final
 1080 x 1350 infographic from the Sheet content package using real text and a
 fixed 4 x 5 matrix layout, avoiding AI-rendered text distortion.
 
+v2.3 adds a reusable food asset workflow. The renderer can place real local food
+PNG assets inside the matrix cells while continuing to render all text and layout
+with Python. Missing assets fall back to placeholders unless generation is
+explicitly enabled.
+
 It does not schedule to Buffer.
 
 ## Project Structure
@@ -27,11 +32,14 @@ It does not schedule to Buffer.
 ├── main.py
 ├── requirements.txt
 ├── .env.example
+├── assets/
+│   └── food_asset_map.json
 ├── prompts/
 │   └── build_your_infographic.md
 └── src/
     ├── agent.py
     ├── config.py
+    ├── food_assets.py
     ├── google_workspace.py
     ├── image_generation.py
     ├── template_renderer.py
@@ -96,6 +104,12 @@ Render a deterministic v2.1 template PNG from an existing Sheet row:
 
 ```bash
 python main.py --render-template --row-id INFO-2026-004
+```
+
+Render and generate missing reusable food assets first:
+
+```bash
+python main.py --render-template --row-id INFO-2026-004 --generate-missing-assets
 ```
 
 Preview the row that would be rendered without creating an image or writing to
@@ -200,7 +214,7 @@ The renderer:
 - uses exactly 4 content columns and exactly 5 rows
 - uses a left-side row label column
 - uses rounded rectangles, pastel boxes and placeholder food tiles
-- saves to `outputs/{POST_ID}-rendered.png`
+- saves to `outputs/{POST_ID}-rendered-v2-3.png`
 - writes the local path and status fields back to the Sheet
 - keeps `Human Review Needed` as `Yes`
 - keeps `Ready for Buffer` as `No`
@@ -220,6 +234,47 @@ fonts/OpenSans-Bold.ttf
 To use Open Sans, create a local `fonts/` folder and add those two `.ttf` files.
 If Open Sans is not available, the renderer falls back to a clean system
 sans-serif font such as Arial or Helvetica.
+
+## v2.3 Food Assets
+
+Food assets live locally in:
+
+```text
+assets/food/
+```
+
+That folder is ignored by git for now, so generated PNGs are not committed. The
+reusable phrase-to-key map is version-controlled at:
+
+```text
+assets/food_asset_map.json
+```
+
+The renderer uses this workflow for each ingredient in the matrix:
+
+1. Look up the exact ingredient phrase in `assets/food_asset_map.json`.
+2. Fall back to a normalized snake_case key if no explicit mapping exists.
+3. Check for `assets/food/{asset_key}.png`.
+4. If found, place that food image at the top center of the cell.
+5. If missing and `--generate-missing-assets` is not set, draw a neat placeholder and log the missing key.
+6. If missing and `--generate-missing-assets` is set, generate one isolated food cutout with the OpenAI image API, save it as a reusable PNG, and use it in the render.
+
+Generated food assets are normalized to square 512 x 512 PNGs. The asset prompt
+asks for realistic isolated food cutouts with clean studio lighting, no text, no
+labels, no hands, no people and no packaging unless the ingredient genuinely
+requires it.
+
+Use the no-spend render first:
+
+```bash
+python main.py --render-template --row-id INFO-2026-004
+```
+
+Only generate missing assets when you intentionally want to spend image credits:
+
+```bash
+python main.py --render-template --row-id INFO-2026-004 --generate-missing-assets
+```
 
 ## Credentials
 
