@@ -46,6 +46,12 @@ def parse_args() -> argparse.Namespace:
         help="Post ID to use with --render-template, for example INFO-2026-004.",
     )
     parser.add_argument(
+        "--layout-mode",
+        choices=["choice_row", "column_combo"],
+        default="choice_row",
+        help="Template layout mode for --render-template.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Preview work without creating images or writing to Google Sheets.",
@@ -216,8 +222,9 @@ def run_template_render(
                     "columns": package.columns,
                     "rows": package.rows,
                     "matrix": package.matrix,
-                    "would_render": f"{settings.output_dir}/{package.post_id}-rendered-v2-3.png",
+                    "would_render": f"{settings.output_dir}/{package.post_id}-rendered-v2-4.png",
                     "generate_missing_assets": args.generate_missing_assets,
+                    "layout_mode": args.layout_mode,
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -232,19 +239,12 @@ def run_template_render(
         settings,
         package,
         generate_missing_assets=args.generate_missing_assets,
+        layout_mode=args.layout_mode,
     )
     local_image_path = render_result.image_path
     asset_report = render_result.asset_report.to_dict()
     drive_link = ""
-    drive_note = ""
-    if not args.skip_drive_upload:
-        try:
-            drive_link = workspace.upload_image_to_drive(
-                image_path=local_image_path,
-                file_name=f"{package.post_id}-rendered.png",
-            )
-        except Exception:
-            drive_note = " Drive upload failed due insufficient OAuth scopes."
+    drive_note = " Drive upload not attempted for v2.4 template rendering."
 
     image_asset_link = drive_link or local_image_path
     placeholder_note = (
@@ -261,7 +261,8 @@ def run_template_render(
             "Image Generation Status": "DONE - rendered locally",
             "Visual QA": (
                 "NEEDS HUMAN REVIEW - deterministic 1080x1350 template rendered "
-                "from Sheet text with exact 4 columns and 5 rows. "
+                f"in {render_result.layout_mode} mode from Sheet text with exact "
+                "4 columns and 5 rows. "
                 f"Food assets found: {len(asset_report['found'])}; "
                 f"missing: {len(asset_report['missing'])}; "
                 f"generated: {len(asset_report['generated'])}. "
@@ -279,10 +280,7 @@ def run_template_render(
 
     print(f"Rendered template for {package.post_id}: {local_image_path}")
     print(json.dumps({"food_assets": asset_report}, indent=2, ensure_ascii=False))
-    if drive_link:
-        print(f"Uploaded to Drive: {drive_link}")
-    elif drive_note:
-        print("Drive upload failed; local path was written to the Sheet.")
+    print("Drive upload was not attempted for template rendering.")
     print("Buffer scheduling was not run.")
 
 

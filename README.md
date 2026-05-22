@@ -23,6 +23,10 @@ PNG assets inside the matrix cells while continuing to render all text and layou
 with Python. Missing assets fall back to placeholders unless generation is
 explicitly enabled.
 
+v2.4 refines the deterministic renderer to better match Aleks's approved
+Canva-style "Build your..." template. It adds layout modes and makes
+`choice_row` the default row-based visual style for bowl/snack-plate posts.
+
 It does not schedule to Buffer.
 
 ## Project Structure
@@ -104,6 +108,13 @@ Render a deterministic v2.1 template PNG from an existing Sheet row:
 
 ```bash
 python main.py --render-template --row-id INFO-2026-004
+```
+
+Choose a layout mode explicitly:
+
+```bash
+python main.py --render-template --row-id INFO-2026-004 --layout-mode choice_row
+python main.py --render-template --row-id INFO-2026-004 --layout-mode column_combo
 ```
 
 Render and generate missing reusable food assets first:
@@ -214,7 +225,7 @@ The renderer:
 - uses exactly 4 content columns and exactly 5 rows
 - uses a left-side row label column
 - uses rounded rectangles, pastel boxes and placeholder food tiles
-- saves to `outputs/{POST_ID}-rendered-v2-3.png`
+- saves to `outputs/{POST_ID}-rendered-v2-4.png` in the default `choice_row` mode
 - writes the local path and status fields back to the Sheet
 - keeps `Human Review Needed` as `Yes`
 - keeps `Ready for Buffer` as `No`
@@ -275,6 +286,24 @@ Only generate missing assets when you intentionally want to spend image credits:
 ```bash
 python main.py --render-template --row-id INFO-2026-004 --generate-missing-assets
 ```
+
+## v2.4 Layout Modes
+
+The template renderer supports two deterministic layout modes:
+
+- `choice_row`: the approved row-based choice matrix style. It uses 5 soft
+  horizontal rows, a left category label with a pink circular icon, and 4 large
+  food options across each row. This is the default and is best for "Build your
+  low FODMAP bowl" or snack plate posts.
+- `column_combo`: a lighter four-column combo layout where each column is a
+  complete meal combination. This remains available for sandwich, wrap or lunch
+  combo posts.
+
+The v2.4 `choice_row` render intentionally avoids a heavy card grid. It uses a
+large pink `BLOAT-FREE` hero heading, a yellow bookmark-style save prompt,
+centered `@ibs.gutdietitian` footer, Python-rendered text throughout, and local
+food assets or placeholders in the food slots. Drive upload is not attempted for
+template rendering yet.
 
 ## Credentials
 
